@@ -76,60 +76,96 @@ if (!function_exists('amc_sign_data')) {
     function amc_sign_data($S) { return amc_asset_data($S['sign_file'] ?? ''); }
 }
 
-/* ==== Pembersih nilai member_image (buang query/fragment) ==== */
+/* ==== Pembersih nilai member_image ==== */
 if (!function_exists('amc_photo_clean')) {
     function amc_photo_clean($raw) {
         $raw = trim((string)$raw);
         if ($raw === '') return '';
+        // Buang query string & fragment, tapi pertahankan path
         return preg_replace('/[?#].*$/', '', $raw);
     }
 }
 
-/* ==== Pencarian berkas foto anggota di disk server (toleran) ==== */
+/* ==== Mesin pencari foto anggota v1.4.6 (agresif & toleran) ==== */
 if (!function_exists('amc_member_photo_path')) {
     function amc_member_photo_path($member) {
         $raw = amc_photo_clean($member['member_image'] ?? '');
         if ($raw === '' || preg_match('#^https?://#i', $raw)) return null;
+
         $rel  = str_replace('\\', '/', $raw);
         $base = basename($rel);
-        $root = dirname(__DIR__, 2);
+        $fname = pathinfo($base, PATHINFO_FILENAME);
+        $validExt = ['jpg','jpeg','png','gif','webp'];
+
+        // Bangun daftar akar pencarian secara komprehensif
         $roots = [];
+        // Prioritas 1: Konstanta SB (paling andal di SLiMS)
+        if (defined('SB'))  $roots[] = rtrim(SB, '/\\');
+        // Prioritas 2: Konstanta IMAGES_BASE
         if (defined('IMAGES_BASE'))  $roots[] = rtrim(IMAGES_BASE, '/\\');
+        // Prioritas 3: Konstanta SENAYAN_BASE
         if (defined('SENAYAN_BASE')) $roots[] = rtrim(SENAYAN_BASE, '/\\');
-        $roots[] = $root;
+        // Prioritas 4: Tebakan berdasarkan posisi plugin
+        $roots[] = dirname(__DIR__, 2);
+        $roots[] = dirname(__DIR__, 3);
+        // Deduplikasi
+        $roots = array_values(array_unique(array_filter($roots, function($r){ return is_dir($r); })));
+
+        // Subfolder yang mungkin berisi foto
         $subs = ['images/persons', 'images/members', 'images', ''];
-        $tries = [];
+
+        // FASE 1: Pencarian eksak (case-sensitive)
         foreach ($roots as $r) {
             foreach ($subs as $s) {
                 $prefix = $r . ($s === '' ? '' : '/' . $s);
-                $tries[] = $prefix . '/' . $rel;
-                $tries[] = $prefix . '/' . $base;
+                // Coba jalur relatif penuh dari DB
+                $p1 = preg_replace('#/{2,}#', '/', $prefix . '/' . $rel);
+                if (is_file($p1)) return $p1;
+                // Coba nama berkas saja
+                $p2 = preg_replace('#/{2,}#', '/', $prefix . '/' . $base);
+                if (is_file($p2)) return $p2;
             }
         }
-        foreach ($tries as $p) {
-            $p = preg_replace('#/{2,}#', '/', $p);
-            if (is_file($p)) return $p;
-        }
-        // Upaya terakhir: cocokkan nama tanpa memedulikan huruf besar/kecil
-        $fname = pathinfo($base, PATHINFO_FILENAME);
+
+        // FASE 2: Pencarian case-insensitive via glob
         foreach ($roots as $r) {
-            foreach (['images/persons', 'images/members', 'images'] as $s) {
-                $dir = $r . '/' . $s . '/';
+            foreach ($subs as $s) {
+                $dir = $r . ($s === '' ? '' : '/' . $s) . '/';
                 if (!is_dir($dir)) continue;
-                $f = glob($dir . $fname . '.*');
-                if ($f) {
-                    foreach ($f as $cand) {
+                $matches = glob($dir . $fname . '.*');
+                if ($matches) {
+                    foreach ($matches as $cand) {
                         $e = strtolower(pathinfo($cand, PATHINFO_EXTENSION));
-                        if (in_array($e, ['jpg','jpeg','png','gif','webp'], true)) return $cand;
+                        if (in_array($e, $validExt, true)) return $cand;
                     }
                 }
             }
         }
+
+        // FASE 3: Recursive scan di folder images (jika semua di atas gagal)
+        foreach ($roots as $r) {
+            $imgDir = $r . '/images';
+            if (!is_dir($imgDir)) continue;
+            try {
+                $iterator = new \RecursiveIteratorIterator(
+                    new \RecursiveDirectoryIterator($imgDir, \FilesystemIterator::SKIP_DOTS),
+                    \RecursiveIteratorIterator::LEAVES_ONLY
+                );
+                foreach ($iterator as $file) {
+                    if (!$file->isFile()) continue;
+                    if (strtolower($file->getFilename()) === strtolower($base)) {
+                        $e = strtolower($file->getExtension());
+                        if (in_array($e, $validExt, true)) return $file->getPathname();
+                    }
+                }
+            } catch (\Throwable $e) { /* abaikan error permission */ }
+        }
+
         return null;
     }
 }
 
-/* ==== URL foto: proxy plugin, atau URL langsung bila tersimpan sebagai URL ==== */
+/* ==== URL foto: ABSOLUT via konstanta SLiMS ==== */
 if (!function_exists('amc_member_photo')) {
     function amc_member_photo($member) {
         $raw = amc_photo_clean($member['member_image'] ?? '');
@@ -137,7 +173,17 @@ if (!function_exists('amc_member_photo')) {
         if (preg_match('#^https?://#i', $raw)) return $raw;
         if (!amc_member_photo_path($member)) return null;
         $id = (int)($member['member_id'] ?? 0);
-        return 'index.php?mod=membership&act=awesome_member_card&action=photo&member_id=' . $id;
+
+        $base = '';
+        if (defined('AWB'))       $base = AWB;
+        elseif (defined('SWB'))   $base = SWB;
+        else {
+            $uri = $_SERVER['REQUEST_URI'] ?? '/';
+            $pos = strpos($uri, '/admin/');
+            $base = ($pos !== false) ? substr($uri, 0, $pos + 7) : '/admin/';
+        }
+
+        return $base . 'index.php?mod=membership&act=awesome_member_card&action=photo&member_id=' . $id;
     }
 }
 
@@ -148,7 +194,7 @@ if (!function_exists('amc_container_url')) {
     }
 }
 
-/* ===== Generator QR Code murni PHP (Byte mode, EC-M, versi 1-6, mask 0) ===== */
+/* ===== Generator QR Code murni PHP ===== */
 if (!function_exists('amc_qr_svg')) {
     function amc_qr_svg($text, $css_size = '12mm', $fg = '#0f172a')
     {
