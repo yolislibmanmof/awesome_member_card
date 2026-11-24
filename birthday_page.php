@@ -12,7 +12,9 @@ require_once __DIR__ . '/amc_lib.php';
 $S = amc_settings();
 
 /* ==== CSRF untuk aksi email ==== */
-if (session_status() === PHP_SESSION_NONE) { @session_start(); }
+if (session_status() !== PHP_SESSION_ACTIVE) {
+die('Sesi admin belum siap. Buka halaman ini melalui menu admin SLiMS.');
+}
 if (empty($_SESSION['amc_csrf_token'])) { $_SESSION['amc_csrf_token'] = bin2hex(random_bytes(32)); }
 $csrf_token = (string)$_SESSION['amc_csrf_token'];
 

@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: Awesome Member Card
- * Plugin URI: https://github.com/yolislibmanmof/sonic
+ * Plugin URI: https://github.com/yolislibmanmof/awesome_member_card
  * Description: Kartu anggota modern untuk SLiMS 9.6 ke atas - dashboard kartu, pengaturan desain, produksi massal hemat kertas/A4/CR80/PDF, dan ucapan ulang tahun anggota.
- * Version: 1.6.0
+ * Version: 1.6.1
  * Author: Yolis Libman
  * Author URI: https://slims.web.id
  */
@@ -12,7 +12,7 @@ defined('INDEX_AUTH') OR die('Direct access not allowed!');
 
 use SLiMS\Plugins;
 
-if (!defined('AMC_VERSION')) define('AMC_VERSION', '1.6.0');
+if (!defined('AMC_VERSION')) define('AMC_VERSION', '1.6.1');
 if (!defined('AMC_ACT'))     define('AMC_ACT', 'awesome_member_card');
 
 require_once __DIR__ . '/amc_lib.php';
@@ -192,6 +192,12 @@ if (!function_exists('amc_dispatch'))  { function amc_dispatch()  { return amc_h
 
 /* ============================================================
  * 5. EKSEKUSI: jalur cepat + jalur tertunda (setelah sesi admin siap)
+ *    PERBAIKAN 1.6.1: nama hook memakai STRING, bukan konstanta class.
+ *    Plugins::ADMIN_AFTER_MODULE_LOADED baru ada sejak SLiMS 9.8.0;
+ *    mereferensikannya di SLiMS 9.6-9.7 = Error "Undefined constant"
+ *    = HTTP 500 pada semua URL ber-parameter act=awesome_member_card.
+ *    String di bawah bernilai identik dengan konstanta di 9.8, dan
+ *    hook yang tidak dikenal di versi lama cukup diabaikan (aman).
  * ============================================================ */
 amc_opac_wish();
 
@@ -199,8 +205,8 @@ if (($_GET['act'] ?? ($_GET['p'] ?? '')) === AMC_ACT) {
     if (!amc_handle()) {
         $amc_cb = function (...$args) { amc_handle(); };
         $amc_p  = Plugins::getInstance();
-        $amc_p->register(Plugins::ADMIN_SESSION_AFTER_START, $amc_cb, 1);
-        $amc_p->register(Plugins::ADMIN_AFTER_MODULE_LOADED, $amc_cb, 1);
+        $amc_p->register('admin_session_after_start', $amc_cb, 1);
+        $amc_p->register('admin_after_module_loaded', $amc_cb, 1);
         $amc_p->register('routing', $amc_cb, 1); // cadangan untuk lingkungan lain
         unset($amc_p, $amc_cb);
     }

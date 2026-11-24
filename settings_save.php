@@ -3,8 +3,14 @@ defined('INDEX_AUTH') OR die('Direct access not allowed!');
 require_once __DIR__ . '/amc_lib.php';
 
 // === 1. VALIDASI CSRF (WAJIB) ===
-if (session_status() === PHP_SESSION_NONE) {
-    @session_start();
+// Sesi dijamin aktif oleh router (amc_handle); jangan session_start() sendiri.
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    if (($_GET['ajax'] ?? '') === '1') {
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'err' => 'Sesi admin belum siap. Muat ulang halaman lalu coba lagi.']);
+        exit;
+    }
+    die('Akses ditolak: sesi admin belum siap. Muat ulang halaman lalu coba lagi.');
 }
 if (!isset($_POST['csrf_token']) || !isset($_SESSION['amc_csrf_token']) || !hash_equals($_SESSION['amc_csrf_token'], $_POST['csrf_token'])) {
     if (($_GET['ajax'] ?? '') === '1') {

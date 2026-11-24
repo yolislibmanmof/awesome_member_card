@@ -283,15 +283,27 @@ if (!function_exists('amc_batch_members')) {
         
         if (!empty($params)) {
             $st = $dbs->prepare($sql);
-            // Perbaikan CRITICAL: bind_param membutuhkan reference, tidak bisa menggunakan ...$params
+            if (!$st) {
+                error_log('[AMC] prepare gagal: ' . $dbs->error . ' | SQL: ' . $sql);
+                return false;
+            }
+            // bind_param membutuhkan reference, tidak bisa menggunakan ...$params
             $refs = [];
             $refs[] = &$types;
             foreach ($params as $k => $v) {
                 $refs[] = &$params[$k];
             }
             call_user_func_array([$st, 'bind_param'], $refs);
-            
-            $st->execute();
+            if (!$st->execute()) {
+                error_log('[AMC] execute gagal: ' . $st->error);
+                $st->close();
+                return false;
+            }
+            if (!method_exists($st, 'get_result')) { // hosting tanpa mysqlnd
+                error_log('[AMC] mysqlnd tidak aktif; get_result() tidak tersedia.');
+                $st->close();
+                return false;
+            }
             return $st->get_result();
         }
         return $dbs->query($sql);
